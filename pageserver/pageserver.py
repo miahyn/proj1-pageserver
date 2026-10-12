@@ -78,30 +78,45 @@ STATUS_NOT_FOUND = "HTTP/1.0 404 Not Found\n\n"
 STATUS_NOT_IMPLEMENTED = "HTTP/1.0 401 Not Implemented\n\n"
 
 
-def respond(sock):
-    """
-    This server responds only to GET requests (not PUT, POST, or UPDATE).
-    Any valid GET request is answered with an ascii graphic of a cat.
-    """
-    sent = 0
-    request = sock.recv(1024)  # We accept only short requests
-    request = str(request, encoding='utf-8', errors='strict')
-    log.info("--- Received request ----")
-    log.info("Request was {}\n***\n".format(request))
 
+def respond(sock):
+    request = sock.recv(1024)
+    request = str(request, encoding='utf-8', errors='strict')
     parts = request.split()
+
     if len(parts) > 1 and parts[0] == "GET":
-        transmit(STATUS_OK, sock)
-        transmit(CAT, sock)
+        path = parts[1]
+
+        if path.startswith("/"):
+            path = path[1:]
+
+        if path.startswith(("~", "//", "..")):
+            transmit(STATUS_FORBIDDEN, sock)
+        elif not path.endswith(".html") and not path.endswith(".css"):
+            transmit(STATUS_NOT_FOUND, sock)
+        else:
+            import os
+            options = get_options()
+            filename = os.path.join(options.DOCROOT, path)
+
+            if os.path.isfile(filename):
+                with open(filename, encoding="utf-8") as page:
+                    content = page.read()
+
+                if path.endswith(".html"):
+                    content_type = "text/html"
+                else:
+                    content_type = "text/css"
+
+                transmit("HTTP/1.0 200 OK\nContent-Type: " + content_type + "\n\n", sock)
+                transmit(content, sock)
+            else:
+                transmit(STATUS_NOT_FOUND, sock)
     else:
-        log.info("Unhandled request: {}".format(request))
         transmit(STATUS_NOT_IMPLEMENTED, sock)
-        transmit("\nI don't handle this request: {}\n".format(request), sock)
 
     sock.shutdown(socket.SHUT_RDWR)
     sock.close()
-    return
-
 
 def transmit(msg, sock):
     """It might take several sends to get the whole message out"""
